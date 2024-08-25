@@ -79,7 +79,6 @@ def award_points(conn):
 
 
 if __name__ == "__main__":
-    print("Hello World!")
     conn = get_db_connection()
     while True:
         initialize_users(conn)
