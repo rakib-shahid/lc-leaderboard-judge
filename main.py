@@ -40,9 +40,12 @@ def award_points(conn):
     for row in rows:
         cur.execute("SELECT username FROM users WHERE id = %s", (row[0],))
         leetcode_username = cur.fetchone()[0]
-        url = "http://localhost:5000/api/leetcode_ac"
+        url = "https://server.rakibshahid.com/api/leetcode_ac"
         headers = {"leetcode-username": leetcode_username}
         response = requests.get(url, headers=headers)
+        if not response:
+            print("Error: ", response.text)
+            break
         json = response.json()
         index = json["count"] - 1
         submissions = json["submission"]
