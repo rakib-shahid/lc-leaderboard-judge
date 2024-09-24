@@ -149,8 +149,7 @@ def CLEAR_ALL_POINTS(reset_interval=None, wins=None):
             cursor.execute(f"UPDATE points SET points = 0 WHERE id = {row[0]};")
         cursor.execute("DELETE FROM reset;")
         cursor.execute("INSERT INTO reset (last_reset) VALUES (NOW());")
-
-        if reset_interval:
+        if reset_interval is not None:
             cursor.execute(f"UPDATE reset SET reset_interval = {reset_interval};")
 
         cursor.execute("UPDATE reset SET last_reset = NOW();")
