@@ -66,7 +66,8 @@ def clear_and_award_win(conn):
         cur = conn.cursor()
         cur.execute("SELECT user_id FROM points ORDER BY points DESC LIMIT 1")
         user_id = cur.fetchone()[0]
-        cur.execute("UPDATE points SET wins = wins + 1 WHERE user_id = %s", (user_id,))
+        # hopefully fix null
+        cur.execute("UPDATE points SET wins = COALESCE(wins, 0) + 1 WHERE user_id = %s", (user_id,))
         conn.commit()
         cur.close()
 
@@ -74,6 +75,7 @@ def clear_and_award_win(conn):
         dbfuncs.CLEAR_ALL_POINTS(reset_interval)
 
 
+# this is the most dogshit function ever, fix it later (this shit is not getting fixed)
 def award_points(conn):
     conn.autocommit = True
     cur = conn.cursor()
@@ -143,9 +145,7 @@ def award_points(conn):
                         "UPDATE last_completed SET problem_name = %s, completed_at = %s WHERE user_id = %s",
                         (problem_name, completed_at, user_id),
                     )
-                    needs_initial_update = (
-                        False  # Reset the flag as the table is now updated
-                    )
+                    needs_initial_update = False
 
                 # For subsequent submissions, only award points if they are after the last completed time
                 elif completed_at > last_completed_time:
@@ -193,4 +193,4 @@ if __name__ == "__main__":
         clear_and_award_win(conn)
         award_points(conn)
         # delay for 1 minute
-        time.sleep(60)
+        time.sleep(1800)
