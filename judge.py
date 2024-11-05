@@ -1,4 +1,5 @@
 import time
+import traceback
 import psycopg2
 import requests
 from datetime import date
@@ -41,6 +42,16 @@ def get_last_reset(conn):
     cur.close()
     return last_reset
 
+def get_points(conn,problem_slug):
+    cur = conn.cursor()
+    query = f"SELECT points FROM difficulty WHERE titleslug = '{problem_slug}';"
+    cur.execute(query)
+    result = cur.fetchall()
+    if len(result) > 0:
+        return result[0][0]
+    else:
+        return -1
+
 
 def get_reset_interval(conn):
     cur = conn.cursor()
@@ -75,12 +86,52 @@ def clear_and_award_win(conn):
         dbfuncs.CLEAR_ALL_POINTS(reset_interval)
 
 
+# determine the difficulty and points of the given problem
+def check_problem_worth(conn,problem_slug):
+    points = get_points(conn,problem_slug)
+    # check if the problem slug is already in the difficulty table
+    if points != -1:
+        print("Problem already in difficulty table")
+        return points
+    print("Problem not in difficulty table")
+    # go to the problem page and get the difficulty
+    url = f"http://localhost:3000/select?titleSlug={problem_slug}"
+    response = requests.get(url)
+    difficulty = ''
+    valid = True
+    if response:
+        difficulty = response.json()["difficulty"].lower()
+    if difficulty == "easy":
+        points = 1
+    elif difficulty == "medium":
+        points = 3
+    elif difficulty == "hard":
+        points = 10
+    else:
+        valid = False
+        print("Invalid difficulty")
+        points = 1
+    # insert into table
+    cur = conn.cursor()
+    if valid:
+        
+        cur.execute("INSERT INTO difficulty (titleslug,points) VALUES (%s,%s)",(problem_slug,points))
+        conn.commit()
+    cur.close()
+    return points
+    
+    
+    
+
 # this is the most dogshit function ever, fix it later (this shit is not getting fixed)
 def award_points(conn):
     conn.autocommit = True
     cur = conn.cursor()
     cur.execute("SELECT id FROM users")
     rows = cur.fetchall()
+    cur.execute("SELECT last_reset FROM reset")
+    last_reset = cur.fetchall()[0][0]
+    last_reset = datetime.combine(last_reset, datetime.min.time())
 
     for row in rows:
         user_id = row[0]
@@ -97,7 +148,6 @@ def award_points(conn):
         )
         last_completed = cur.fetchone()
         last_completed_problem = last_completed[0]
-        last_completed_time = last_completed[1]
 
         # Flag to track if last_completed needs updating due to being uninitialized
         needs_initial_update = False
@@ -121,6 +171,8 @@ def award_points(conn):
             while index >= 0:
                 # Get problem name and submission timestamp
                 problem_name = submissions[index]["title"]
+                problem_slug = submissions[index]["titleSlug"]
+                problem_points = check_problem_worth(conn,problem_slug)
                 completed_at = submissions[index]["timestamp"]
                 completed_at = datetime.fromtimestamp(int(completed_at))
 
@@ -131,7 +183,6 @@ def award_points(conn):
                 )
                 last_completed = cur.fetchone()
                 last_completed_problem = last_completed[0]
-                last_completed_time = last_completed[1]
 
                 print(
                     f"Checking submission: {problem_name} completed at {completed_at}"
@@ -148,7 +199,7 @@ def award_points(conn):
                     needs_initial_update = False
 
                 # For subsequent submissions, only award points if they are after the last completed time
-                elif completed_at > last_completed_time:
+                elif completed_at > last_reset:
                     # Check if the problem was already completed
                     cur.execute(
                         "SELECT * FROM user_submissions WHERE user_id = %s AND problem_name = %s",
@@ -169,15 +220,16 @@ def award_points(conn):
                         )
                         # Award 3 points to the user
                         cur.execute(
-                            "UPDATE points SET points = points + 3 WHERE user_id = %s",
-                            (user_id,),
+                            "UPDATE points SET points = points + %s WHERE user_id = %s",
+                            (problem_points,user_id,),
                         )
                 else:
                     print(
-                        f"Skipping problem: {problem_name}, completed before or on the last recorded submission of {last_completed_time}"
+                        f"Skipping problem: {problem_name}, completed before or on the last reset of {last_reset}"
                     )
-
+                
                 index -= 1
+            time.sleep(2)
     cur.close()
 
 
@@ -189,8 +241,11 @@ if __name__ == "__main__":
     # example = datetime.date(2023, 1, 1)
     # print(example > last_reset)
     while True:
-        initialize_users(conn)
-        clear_and_award_win(conn)
-        award_points(conn)
-        # delay for 1 minute
-        time.sleep(1800)
+        try:
+            initialize_users(conn)
+            clear_and_award_win(conn)
+            award_points(conn)
+        except Exception as e:
+           traceback.print_exc()
+        # delay for 10 minutes
+        time.sleep(600)
