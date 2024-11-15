@@ -79,6 +79,17 @@ def clear_and_award_win(conn):
         user_id = cur.fetchone()[0]
         # hopefully fix null
         cur.execute("UPDATE points SET wins = COALESCE(wins, 0) + 1 WHERE user_id = %s", (user_id,))
+        # insert 2 columsn into win_history table, first is user_id second is timestamp of now
+        timestamp_now = datetime.now()
+        cur.execute(
+            "SELECT 1 FROM win_history WHERE user_id = %s AND timestamp::date = %s::date",
+            (user_id, timestamp_now)
+        )
+        if cur.fetchone() is None:
+            # Insert new win record if it doesn't already exist
+            cur.execute("INSERT INTO win_history (user_id, timestamp) VALUES (%s, %s)", (user_id, timestamp_now))
+        else:
+            print("Identical row already exists in win_history; skipping insertion.")
         conn.commit()
         cur.close()
 
