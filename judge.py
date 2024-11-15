@@ -231,8 +231,13 @@ def award_points(conn):
                         )
                         # Award 3 points to the user
                         cur.execute(
-                            "UPDATE points SET points = points + %s WHERE user_id = %s",
-                            (problem_points,user_id,),
+                            """
+                            UPDATE points 
+                            SET points = points + %s, 
+                                total_points = total_points + %s 
+                            WHERE user_id = %s
+                            """,
+                            (problem_points, problem_points, user_id),
                         )
                 else:
                     print(
