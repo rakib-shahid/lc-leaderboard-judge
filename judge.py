@@ -102,7 +102,7 @@ def check_problem_worth(conn,problem_slug):
     points = get_points(conn,problem_slug)
     # check if the problem slug is already in the difficulty table
     if points != -1:
-        print("Problem already in difficulty table")
+        # print("Problem already in difficulty table")
         return points
     print("Problem not in difficulty table")
     # go to the problem page and get the difficulty
@@ -125,7 +125,6 @@ def check_problem_worth(conn,problem_slug):
     # insert into table
     cur = conn.cursor()
     if valid:
-        
         cur.execute("INSERT INTO difficulty (titleslug,points) VALUES (%s,%s)",(problem_slug,points))
         conn.commit()
     cur.close()
@@ -161,11 +160,11 @@ def award_points(conn):
         last_completed_problem = last_completed[0]
 
         # Flag to track if last_completed needs updating due to being uninitialized
-        needs_initial_update = False
+        # needs_initial_update = False
 
         # Check if last_completed is empty (i.e., first valid submission needs to update last_completed)
         if last_completed_problem == "":
-            needs_initial_update = True
+            # needs_initial_update = True
             print(
                 f"User {leetcode_username} has no previous completed problems. Initializing first valid submission."
             )
@@ -194,30 +193,32 @@ def award_points(conn):
                 )
                 last_completed = cur.fetchone()
                 last_completed_problem = last_completed[0]
+                # print(last_completed)
 
-                print(
-                    f"Checking submission: {problem_name} completed at {completed_at}"
-                )
+                # print(
+                #     f"Checking submission: {problem_name} completed at {completed_at}"
+                # )
 
+                # SHOULD NO LONGER BE NECESSARY BECAUSE OF FIXED REGISTRATION
                 # If last_completed is empty, automatically use this first valid submission
-                if needs_initial_update:
-                    print(f"Initializing last completed problem with: {problem_name}")
-                    # Update the last_completed table with the first problem
-                    cur.execute(
-                        "UPDATE last_completed SET problem_name = %s, completed_at = %s WHERE user_id = %s",
-                        (problem_name, completed_at, user_id),
-                    )
-                    needs_initial_update = False
+                # if needs_initial_update:
+                #     print(f"Initializing last completed problem with: {problem_name}")
+                #     # Update the last_completed table with the first problem
+                #     cur.execute(
+                #         "UPDATE last_completed SET problem_name = %s, completed_at = %s WHERE user_id = %s",
+                #         (problem_name, completed_at, user_id),
+                #     )
+                #     needs_initial_update = False
 
                 # For subsequent submissions, only award points if they are after the last completed time
-                elif completed_at > last_reset:
+                if completed_at > last_reset and completed_at > last_completed[1]:
                     # Check if the problem was already completed
                     cur.execute(
                         "SELECT * FROM user_submissions WHERE user_id = %s AND problem_name = %s",
                         (user_id, problem_name),
                     )
                     if not cur.fetchone():
-                        print(f"Awarding points for problem: {problem_name}")
+                        print(f"Awarding {problem_points} points to {leetcode_username} for problem: {problem_name}")
 
                         # Insert new submission into user_submissions table
                         cur.execute(
@@ -239,13 +240,13 @@ def award_points(conn):
                             """,
                             (problem_points, problem_points, user_id),
                         )
-                else:
-                    print(
-                        f"Skipping problem: {problem_name}, completed before or on the last reset of {last_reset}"
-                    )
+                # else:
+                #     print(
+                #         f"Skipping problem: {problem_name}, completed before or on the last reset of {last_reset}"
+                #     )
                 
                 index -= 1
-            time.sleep(2)
+            # time.sleep(1)
     cur.close()
 
 
@@ -261,6 +262,7 @@ if __name__ == "__main__":
             initialize_users(conn)
             clear_and_award_win(conn)
             award_points(conn)
+            print("done all tasks, sleeping")
         except Exception as e:
            traceback.print_exc()
         # delay for 10 minutes
