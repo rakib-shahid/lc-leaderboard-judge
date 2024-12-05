@@ -106,7 +106,7 @@ def check_problem_worth(conn,problem_slug):
         return points
     print("Problem not in difficulty table")
     # go to the problem page and get the difficulty
-    url = f"http://localhost:3000/select?titleSlug={problem_slug}"
+    url = f"http://localhost:3001/select?titleSlug={problem_slug}"
     response = requests.get(url)
     difficulty = ''
     valid = True
@@ -259,7 +259,7 @@ if __name__ == "__main__":
     # print(example > last_reset)
     while True:
         try:
-            initialize_users(conn)
+            # initialize_users(conn)
             clear_and_award_win(conn)
             award_points(conn)
             print("done all tasks, sleeping")
