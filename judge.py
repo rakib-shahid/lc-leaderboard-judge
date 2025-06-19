@@ -42,7 +42,8 @@ def get_last_reset(conn):
     cur.close()
     return last_reset
 
-def get_points(conn,problem_slug):
+
+def get_points(conn, problem_slug):
     cur = conn.cursor()
     query = f"SELECT points FROM difficulty WHERE titleslug = '{problem_slug}';"
     cur.execute(query)
@@ -78,16 +79,19 @@ def clear_and_award_win(conn):
         cur.execute("SELECT user_id FROM points ORDER BY points DESC LIMIT 1")
         user_id = cur.fetchone()[0]
         # hopefully fix null
-        cur.execute("UPDATE points SET wins = COALESCE(wins, 0) + 1 WHERE user_id = %s", (user_id,))
+        cur.execute("UPDATE points SET wins = wins + 1 WHERE user_id = %s", (user_id,))
         # insert 2 columsn into win_history table, first is user_id second is timestamp of now
         timestamp_now = datetime.now()
         cur.execute(
             "SELECT 1 FROM win_history WHERE user_id = %s AND timestamp::date = %s::date",
-            (user_id, timestamp_now)
+            (user_id, timestamp_now),
         )
         if cur.fetchone() is None:
             # Insert new win record if it doesn't already exist
-            cur.execute("INSERT INTO win_history (user_id, timestamp) VALUES (%s, %s)", (user_id, timestamp_now))
+            cur.execute(
+                "INSERT INTO win_history (user_id, timestamp) VALUES (%s, %s)",
+                (user_id, timestamp_now),
+            )
         else:
             print("Identical row already exists in win_history; skipping insertion.")
         conn.commit()
@@ -98,8 +102,8 @@ def clear_and_award_win(conn):
 
 
 # determine the difficulty and points of the given problem
-def check_problem_worth(conn,problem_slug):
-    points = get_points(conn,problem_slug)
+def check_problem_worth(conn, problem_slug):
+    points = get_points(conn, problem_slug)
     # check if the problem slug is already in the difficulty table
     if points != -1:
         # print("Problem already in difficulty table")
@@ -108,7 +112,7 @@ def check_problem_worth(conn,problem_slug):
     # go to the problem page and get the difficulty
     url = f"http://localhost:3001/select?titleSlug={problem_slug}"
     response = requests.get(url)
-    difficulty = ''
+    difficulty = ""
     valid = True
     if response:
         difficulty = response.json()["difficulty"].lower()
@@ -125,13 +129,26 @@ def check_problem_worth(conn,problem_slug):
     # insert into table
     cur = conn.cursor()
     if valid:
-        cur.execute("INSERT INTO difficulty (titleslug,points) VALUES (%s,%s)",(problem_slug,points))
+        cur.execute(
+            "INSERT INTO difficulty (titleslug,points) VALUES (%s,%s)",
+            (problem_slug, points),
+        )
         conn.commit()
     cur.close()
     return points
-    
-    
-    
+
+
+def get_penalty(conn, user_id):
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM (SELECT user_id FROM win_history ORDER BY timestamp DESC LIMIT 5) AS latest WHERE user_id = %s;",
+        (user_id,),
+    )
+    wins = cur.fetchone()[0]
+    wins = max(wins, 1)
+    penalties = {5: 0.9, 4: 0.75, 3: 0.5, 2: 0.30, 1: 0}
+    return penalties[wins]
+
 
 # this is the most dogshit function ever, fix it later (this shit is not getting fixed)
 def award_points(conn):
@@ -150,6 +167,8 @@ def award_points(conn):
         cur.execute("SELECT username FROM users WHERE id = %s", (user_id,))
         leetcode_username = cur.fetchone()[0]
         print(f"Processing user: {leetcode_username}")
+        penalty = get_penalty(conn, user_id)
+        # print(f"{leetcode_username}'s penalty = {penalty}")
 
         # Get user's last completed submission
         cur.execute(
@@ -182,7 +201,7 @@ def award_points(conn):
                 # Get problem name and submission timestamp
                 problem_name = submissions[index]["title"]
                 problem_slug = submissions[index]["titleSlug"]
-                problem_points = check_problem_worth(conn,problem_slug)
+                problem_points = check_problem_worth(conn, problem_slug)
                 completed_at = submissions[index]["timestamp"]
                 completed_at = datetime.fromtimestamp(int(completed_at))
 
@@ -193,22 +212,6 @@ def award_points(conn):
                 )
                 last_completed = cur.fetchone()
                 last_completed_problem = last_completed[0]
-                # print(last_completed)
-
-                # print(
-                #     f"Checking submission: {problem_name} completed at {completed_at}"
-                # )
-
-                # SHOULD NO LONGER BE NECESSARY BECAUSE OF FIXED REGISTRATION
-                # If last_completed is empty, automatically use this first valid submission
-                # if needs_initial_update:
-                #     print(f"Initializing last completed problem with: {problem_name}")
-                #     # Update the last_completed table with the first problem
-                #     cur.execute(
-                #         "UPDATE last_completed SET problem_name = %s, completed_at = %s WHERE user_id = %s",
-                #         (problem_name, completed_at, user_id),
-                #     )
-                #     needs_initial_update = False
 
                 # For subsequent submissions, only award points if they are after the last completed time
                 if completed_at > last_reset and completed_at > last_completed[1]:
@@ -218,7 +221,9 @@ def award_points(conn):
                         (user_id, problem_name),
                     )
                     if not cur.fetchone():
-                        print(f"Awarding {problem_points} points to {leetcode_username} for problem: {problem_name}")
+                        print(
+                            f"Awarding {problem_points} points to {leetcode_username} for problem: {problem_name}"
+                        )
 
                         # Insert new submission into user_submissions table
                         cur.execute(
@@ -238,32 +243,35 @@ def award_points(conn):
                                 total_points = total_points + %s 
                             WHERE user_id = %s
                             """,
-                            (problem_points, problem_points, user_id),
+                            (
+                                problem_points * (1 - penalty),
+                                problem_points * (1 - penalty),
+                                user_id,
+                            ),
                         )
-                # else:
-                #     print(
-                #         f"Skipping problem: {problem_name}, completed before or on the last reset of {last_reset}"
-                #     )
-                
+
                 index -= 1
-            # time.sleep(1)
     cur.close()
 
 
 if __name__ == "__main__":
-
-    conn = get_db_connection()
 
     # create example of jan 1 2023
     # example = datetime.date(2023, 1, 1)
     # print(example > last_reset)
     while True:
         try:
+            conn = get_db_connection()
             # initialize_users(conn)
             clear_and_award_win(conn)
             award_points(conn)
-            print("done all tasks, sleeping")
+            print("done all tasks")
         except Exception as e:
-           traceback.print_exc()
+            traceback.print_exc()
+            try:
+                conn.close()
+            except:
+                pass
         # delay for 10 minutes
-        time.sleep(600)
+        print("sleeping for 5 min")
+        time.sleep(60 * 5)
